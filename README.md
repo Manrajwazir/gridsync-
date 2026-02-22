@@ -1,4 +1,4 @@
-# ⚡ GridSync
+# GridSync
 
 ### *Predicting stress. Coordinating action. Saving the Alberta Grid.*
 
@@ -8,10 +8,10 @@
 
 ---
 
-## 🚩 The Problem
+## The Problem
 Alberta's power grid is under increasing pressure. Cold snaps, extreme heat, and industrial growth lead to **demand spikes** that can exceed the grid's capacity (approaching the 13,000 MW threshold). We recently saw a new all-time record of **12,785 MW** in December 2025. When the grid fails, rolling blackouts occur, affecting hospitals, businesses, and homes.
 
-## 🚀 The Solution
+## The Solution
 GridSync is an AI-powered coordination platform that turns Albertans into a "virtual power plant." By predicting grid stress **24-48 hours in advance**, we give community members the time they need to shift their usage, preventing blackouts before they happen.
 
 ### How it works:
@@ -22,7 +22,7 @@ GridSync is an AI-powered coordination platform that turns Albertans into a "vir
 
 ---
 
-## 📈 Technical Deep Dive: The ML Brain
+## Technical Deep Dive: The ML Brain
 GridSync isn't just a dashboard—it's backed by a sophisticated time-series forecasting model.
 
 -   **Algorithm**: Facebook Prophet (Piecewise Linear Trend + Multiplicative Seasonality).
@@ -35,7 +35,7 @@ GridSync isn't just a dashboard—it's backed by a sophisticated time-series for
 
 ---
 
-## 🏗️ Technical Architecture
+## Technical Architecture
 
 | Layer           | Technology           | Role                                                      |
 | :-------------- | :------------------- | :-------------------------------------------------------- |
@@ -48,7 +48,7 @@ GridSync isn't just a dashboard—it's backed by a sophisticated time-series for
 
 ---
 
-## 📊 Project Structure
+## Project Structure
 
 ```bash
 gridsync/
@@ -64,12 +64,12 @@ gridsync/
 
 ---
 
-## 🏁 Built For
+## Built For
 **HACKED 2025** — University of Alberta.
 
 *GridSync: Because a smarter grid starts with a more informed community.*
 
 ---
 
-## 📝 License
+## License
 MIT License
