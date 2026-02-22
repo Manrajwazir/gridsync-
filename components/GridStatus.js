@@ -27,34 +27,24 @@ const MAX_CAPACITY = 11700
  * 4. Combines everything into one view
  */
 
-// ── Generate mock historical data ──
-// Creates a realistic daily usage curve for the last 24 hours
-// Uses sequential idx as unique key + label for display
-function generateHistorical() {
-  const data = []
-  const now = new Date()
-  for (let i = 23; i >= 0; i--) {
-    const time = new Date(now - i * 60 * 60 * 1000)
-    const hour = time.getHours()
-
-    let baseMW = 9200
-    if (hour >= 6 && hour < 10) baseMW = 9200 + (hour - 6) * 350
-    if (hour >= 10 && hour < 16) baseMW = 10400 + Math.sin(hour) * 200
-    if (hour >= 16 && hour < 21) baseMW = 10400 + (hour - 16) * 250
-    if (hour >= 21) baseMW = 11000 - (hour - 21) * 400
-    if (hour < 6) baseMW = 8800 + hour * 80
-    baseMW += (Math.random() - 0.5) * 300
-
-    data.push({
-      label: time.toLocaleDateString('en-CA', { weekday: 'short' }) + ' ' +
-             time.toLocaleTimeString('en-CA', { hour: 'numeric', hour12: true }),
-      historical: Math.round(baseMW),
+// ── Fetch real historical data from AESO API ──
+async function fetchHistorical(anchorMw) {
+  try {
+    const res = await fetch(`/api/historical-usage?anchor=${anchorMw || 10500}`)
+    const json = await res.json()
+    if (!json.data || json.data.length === 0) throw new Error('empty')
+    return json.data.map(pt => ({
+      label: new Date(pt.timestamp).toLocaleDateString('en-CA', { weekday: 'short' }) + ' ' +
+             new Date(pt.timestamp).toLocaleTimeString('en-CA', { hour: 'numeric', hour12: true }),
+      historical: pt.usage_mw,
       predicted: undefined,
       lower: 0,
       bandWidth: 0,
-    })
+    }))
+  } catch {
+    // Fallback: no historical data points
+    return []
   }
-  return data
 }
 
 // ── Custom chart tooltip ──
@@ -131,40 +121,81 @@ export default function GridStatus({ onReady }) {
     }
   }, [loading])
 
-  // Fetch predictions + build chart data
+  // Fetch historical + predictions and build chart data
   useEffect(() => {
-    fetch('/predictions.json')
-      .then(r => r.json())
-      .then(d => {
-        const preds = d.predictions ?? []
-        setPredictions(preds)
+    async function buildChart() {
+      const currentMw = liveData?.usage_mw || 10500
 
-        const historical = generateHistorical()
+      try {
+        const [histRes, predsRes] = await Promise.all([
+          fetchHistorical(currentMw),
+          fetch('/predictions.json')
+            .then(r => r.json())
+            .then(d => d.predictions ?? [])
+            .catch(() => [])
+        ])
 
-        const predData = preds.slice(0, 24).map(p => {
+        setPredictions(predsRes)
+
+        // Use a Map to combine points by timestamp to avoid duplicates and ensure alignment
+        // Format of map key: "YYYY-MM-DD HH:00"
+        const dataMap = new Map()
+
+        // 1. Add historical data - these are the GROUND TRUTH
+        histRes.forEach(pt => {
+          dataMap.set(pt.label, {
+            ...pt,
+            historical: pt.historical,
+            predicted: undefined
+          })
+        })
+
+        // 2. Add predictions
+        predsRes.slice(0, 36).forEach(p => {
+          const label = new Date(p.timestamp).toLocaleDateString('en-CA', { weekday: 'short' }) + ' ' +
+                        new Date(p.timestamp).toLocaleTimeString('en-CA', { hour: 'numeric', hour12: true })
+          
+          const existing = dataMap.get(label)
           const lower = p.lower_bound ?? undefined
           const upper = p.upper_bound ?? undefined
-          return {
-            label: new Date(p.timestamp).toLocaleDateString('en-CA', { weekday: 'short' }) + ' ' +
-                   new Date(p.timestamp).toLocaleTimeString('en-CA', { hour: 'numeric', hour12: true }),
-            predicted: p.predicted_mw,
-            lower,
-            upper,
-            bandWidth: (lower != null && upper != null) ? upper - lower : undefined,
-            historical: undefined,
+          
+          if (existing) {
+            // Overlap: add prediction info to historical point
+            existing.predicted = p.predicted_mw
+            existing.lower = lower
+            existing.upper = upper
+            existing.bandWidth = (lower != null && upper != null) ? upper - lower : undefined
+          } else {
+            // New point (future)
+            dataMap.set(label, {
+              label,
+              historical: undefined, // Predictions don't have historical data
+              predicted: p.predicted_mw,
+              lower,
+              upper,
+              bandWidth: (lower != null && upper != null) ? upper - lower : undefined
+            })
           }
         })
 
-        // Assign sequential idx to EVERY point — guarantees unique X values
-        const combined = [...historical, ...predData].map((pt, i) => ({
+        // 3. Convert back to array and sort by something more reliable than labels
+        // Note: Map preserves insertion order, but we want chronological.
+        // For now, index-based assignment is safe because we added entries chronologically.
+        const combined = Array.from(dataMap.values()).map((pt, i) => ({
           ...pt,
-          idx: i,
+          idx: i
         }))
 
         setChartData(combined)
-      })
-      .catch(() => setChartData(generateHistorical().map((pt, i) => ({ ...pt, idx: i }))))
-  }, [])
+      } catch (err) {
+        console.error('Failed to build chart data:', err)
+      }
+    }
+
+    if (!loading) {
+      buildChart()
+    }
+  }, [loading, liveData?.usage_mw])
 
   // Tick countdown every second
   useEffect(() => {

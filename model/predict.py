@@ -1,7 +1,7 @@
 import pickle, json, requests, pandas as pd
 from datetime import datetime
 
-with open('alberta_model.pkl', 'rb') as f:
+with open('model/alberta_model.pkl', 'rb') as f:
     model = pickle.load(f)
 
 # Get fresh weather forecast
@@ -59,7 +59,7 @@ for i, row in forecast.iterrows():
         'temperature_c': round(temp, 1),
     })
 
-with open('predictions.json', 'w') as f:
+with open('public/predictions.json', 'w') as f:
     json.dump({'generated_at': datetime.now().isoformat(), 'predictions': results}, f, indent=2)
 
 print(f"✅ Done — {len(results)} predictions generated")

@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { supabase } from '../lib/supabase'
 import GridStatus from '../components/GridStatus'
 import DemandGauge from '../components/DemandGauge'
 import ThermostatRoundedIcon from '@mui/icons-material/ThermostatRounded'
@@ -92,10 +93,42 @@ function HomeSkeleton() {
   )
 }
 
+// ... existing icons ...
+
 export default function Home() {
   const [openCategory, setOpenCategory] = useState(null)
   const [gridLoaded, setGridLoaded] = useState(false)
-  const [liveStats, setLiveStats] = useState(null) // pct + status from GridStatus
+  const [liveStats, setLiveStats] = useState(null)
+  const [activeAlert, setActiveAlert] = useState(null)
+
+  // Listen for real-time alerts from Supabase
+  useEffect(() => {
+    // 1. Fetch any existing active alerts on load
+    const fetchExisting = async () => {
+      const { data } = await supabase
+        .from('alerts')
+        .select('*')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+      if (data?.[0]) setActiveAlert(data[0])
+    }
+    fetchExisting()
+
+    // 2. Subscribe to new alerts
+    const channel = supabase
+      .channel('public:alerts')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'alerts' }, payload => {
+        if (payload.new.is_active) {
+          setActiveAlert(payload.new)
+        }
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [])
 
   return (
     <div style={{ padding: '20px 24px 100px', maxWidth: '1100px', margin: '0 auto', fontFamily: "'Inter', sans-serif" }}>
@@ -115,6 +148,44 @@ export default function Home() {
           Alberta grid — live status and energy saving tips
         </p>
       </div>
+
+      {/* Real-time Alert Notification */}
+      {activeAlert && (
+        <div style={{
+          background: 'rgba(255, 59, 48, 0.1)',
+          border: '1px solid #ff3b30',
+          borderRadius: '12px',
+          padding: '16px 20px',
+          marginBottom: '24px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+          animation: 'pulse 2s infinite',
+        }}>
+          <style>{`
+            @keyframes pulse {
+              0% { box-shadow: 0 0 0 0 rgba(255,59,48,0.4); }
+              70% { box-shadow: 0 0 0 10px rgba(255,59,48,0); }
+              100% { box-shadow: 0 0 0 0 rgba(255,59,48,0); }
+            }
+          `}</style>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '18px' }}>🚨</span>
+            <span style={{ fontWeight: '800', color: '#ff3b30', fontSize: '14px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Grid Emergency Alert
+            </span>
+            <button 
+              onClick={() => setActiveAlert(null)}
+              style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: '#555', cursor: 'pointer', fontSize: '12px' }}
+            >
+              Dismiss
+            </button>
+          </div>
+          <div style={{ fontSize: '14px', color: '#ededed', lineHeight: '1.5', fontWeight: '500' }}>
+            {activeAlert.message}
+          </div>
+        </div>
+      )}
 
       {/* Skeleton until loaded */}
       {!gridLoaded && <HomeSkeleton />}

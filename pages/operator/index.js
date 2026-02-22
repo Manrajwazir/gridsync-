@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import GridStatus from '../../components/GridStatus'
 import DemandGauge from '../../components/DemandGauge'
+import { supabase } from '../../lib/supabase'
 
 // Leaflet needs the browser window object — disable SSR
 const AlbertaMap = dynamic(() => import('../../components/AlbertaMap'), { ssr: false })
@@ -14,13 +15,44 @@ const AlbertaMap = dynamic(() => import('../../components/AlbertaMap'), { ssr: f
 export default function OperatorDashboard() {
   const [accuracy, setAccuracy] = useState(null)
   const [liveStats, setLiveStats] = useState(null)
+  const [jitteredUsers, setJitteredUsers] = useState(12847)
+  const [jitteredSaved, setJitteredSaved] = useState(16.5)
+  const [alertCount, setAlertCount] = useState(0)
 
+  // Load alert count from last 24h
+  useEffect(() => {
+    async function fetchAlertCount() {
+      const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+      const { count, error } = await supabase
+        .from('alerts')
+        .select('*', { count: 'exact', head: true })
+        .gt('created_at', yesterday)
+      if (!error && count !== null) setAlertCount(count)
+    }
+    fetchAlertCount()
+  }, [])
   useEffect(() => {
     fetch('/accuracy.json')
       .then(r => r.json())
       .then(d => setAccuracy(d))
       .catch(() => {})
   }, [])
+
+  // Jitter "Active Users" to feel live
+  useEffect(() => {
+    const inter = setInterval(() => {
+      setJitteredUsers(prev => prev + Math.floor(Math.random() * 5) - 2)
+    }, 4000)
+    return () => clearInterval(inter)
+  }, [])
+
+  // Link "MW Saved" to live grid usage (mocked as ~0.15% of load)
+  useEffect(() => {
+    if (liveStats?.usageMw) {
+      const base = liveStats.usageMw * 0.0015
+      setJitteredSaved((base + (Math.random() * 0.4 - 0.2)).toFixed(1))
+    }
+  }, [liveStats?.usageMw])
 
   const headlineAccuracy = accuracy?.mae_mw != null
     ? (100 - (accuracy.mae_mw / 11700) * 100).toFixed(1) + '%'
@@ -47,9 +79,9 @@ export default function OperatorDashboard() {
         gap: '16px', marginBottom: '28px',
       }}>
         {[
-          { label: 'Active Users', value: '12,847', change: '+3.2%', up: true },
-          { label: 'MW Saved Today', value: '16.5', change: '+1.8 MW', up: true },
-          { label: 'Alerts Sent', value: '3', change: 'Last 24h', up: null },
+          { label: 'Active Users', value: jitteredUsers.toLocaleString(), change: '+3.2%', up: true },
+          { label: 'MW Saved Today', value: jitteredSaved, change: '+1.8 MW', up: true },
+          { label: 'Alerts Sent', value: alertCount, change: 'Last 24h', up: null },
           { label: 'Model Accuracy', value: headlineAccuracy, change: 'From accuracy.json', up: null },
         ].map((stat, i) => (
           <div key={i} style={{

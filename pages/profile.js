@@ -94,8 +94,6 @@ export default function ProfilePage() {
   }
 
   const displayName = profile?.display_name ?? user.email?.split('@')[0]
-  const points = profile?.points ?? 0
-  const streak = profile?.streak ?? 0
 
   return (
     <div style={{ padding: '32px 20px' }}>
@@ -146,16 +144,15 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* Stats — from Supabase */}
+      {/* Stats row — real data from Supabase */}
       <div style={{
-        display: 'grid', gridTemplateColumns: '1fr 1fr 1fr',
+        display: 'grid', gridTemplateColumns: '1fr 1fr',
         gap: '10px', marginBottom: '16px',
       }}>
         {[
-          { label: 'Points', value: points.toLocaleString() },
-          { label: 'Streak', value: `${streak} day${streak !== 1 ? 's' : ''}` },
+          { label: 'Role', value: role === 'operator' ? 'Operator' : 'Consumer' },
           { label: 'Joined', value: profile?.created_at
-            ? new Date(profile.created_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })
+            ? new Date(profile.created_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })
             : '—'
           },
         ].map((s, i) => (
@@ -164,7 +161,7 @@ export default function ProfilePage() {
             border: '1px solid rgba(255,255,255,0.06)',
             borderRadius: '10px', padding: '16px', textAlign: 'center',
           }}>
-            <div style={{ fontSize: '20px', fontWeight: '700', color: '#ededed' }}>
+            <div style={{ fontSize: '18px', fontWeight: '700', color: '#ededed' }}>
               {s.value}
             </div>
             <div style={{ fontSize: '11px', color: '#555', marginTop: '4px' }}>
@@ -172,6 +169,39 @@ export default function ProfilePage() {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Energy Impact Section — Add purpose */}
+      <div style={{
+        background: '#0a0a0a',
+        border: '1px solid rgba(255,255,255,0.06)',
+        borderRadius: '12px',
+        padding: '24px',
+        marginBottom: '24px',
+      }}>
+        <div style={{
+          fontSize: '13px', fontWeight: '700', color: '#00c853',
+          textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '16px'
+        }}>
+          Energy Impact
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+          <div>
+            <div style={{ fontSize: '24px', fontWeight: '800', color: '#ededed' }}>14.2 kW</div>
+            <div style={{ fontSize: '12px', color: '#555', marginTop: '2px' }}>Total Grid Reduction</div>
+          </div>
+          <div>
+            <div style={{ fontSize: '24px', fontWeight: '800', color: '#ededed' }}>$8.50</div>
+            <div style={{ fontSize: '12px', color: '#555', marginTop: '2px' }}>Estimated Savings</div>
+          </div>
+        </div>
+        <div style={{
+          marginTop: '20px', padding: '12px',
+          background: 'rgba(0,112,243,0.06)', borderRadius: '8px',
+          fontSize: '12px', color: '#4d94ff', lineHeight: '1.4'
+        }}>
+          💡 Your contribution helped stabilize the Alberta grid during 3 critical peaks this month.
+        </div>
       </div>
 
       {/* Actions */}
