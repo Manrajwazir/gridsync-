@@ -63,10 +63,13 @@ export default function AlbertaMap({ riskOverride }) {
       const map = L.map(mapRef.current, {
         center: [54.5, -115.0],
         zoom: 6,
-        zoomControl: true,
+        zoomControl: false, // will add custom position below
         scrollWheelZoom: false, // prevents page scroll hijacking
         attributionControl: false,
       })
+
+      // Move zoom control to bottom right so it doesn't cover labels
+      L.control.zoom({ position: 'bottomright' }).addTo(map)
 
       instanceRef.current = map
 
