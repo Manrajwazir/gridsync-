@@ -26,7 +26,7 @@ weather = dict(zip(
     data['hourly']['temperature_2m']
 ))
 
-print(f"🌡️  Weather: {len(weather)} hours fetched, sample temp: {list(weather.values())[0]}°C")
+print(f"[weather] {len(weather)} hours fetched, sample temp: {list(weather.values())[0]}C")
 
 # ── Build future dates starting from RIGHT NOW ──
 now = pd.Timestamp.now().floor('h')
@@ -65,10 +65,10 @@ for i, row in forecast.iterrows():
     })
 
 out_path = ROOT / 'public' / 'predictions.json'
-with open(out_path, 'w') as f:
+with open(out_path, 'w', encoding='utf-8') as f:
     json.dump({'generated_at': datetime.now().isoformat(), 'predictions': results}, f, indent=2)
 
-print(f"✅ Done — {len(results)} predictions generated")
-print(f"📅 First: {results[0]['timestamp'][:16]}")
-print(f"📅 Last:  {results[-1]['timestamp'][:16]}")
-print(f"⚡ Peak:  {max(results, key=lambda x: x['predicted_mw'])['timestamp'][:16]}")
+print(f"[done] {len(results)} predictions generated")
+print(f"[first] {results[0]['timestamp'][:16]}")
+print(f"[last]  {results[-1]['timestamp'][:16]}")
+print(f"[peak]  {max(results, key=lambda x: x['predicted_mw'])['timestamp'][:16]}")
