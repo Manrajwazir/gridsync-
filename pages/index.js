@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import Head from 'next/head'
 import EnergyMixChart from '../components/EnergyMixChart'
 
 /*
@@ -43,6 +44,9 @@ export default function Landing() {
 
   return (
     <>
+      <Head>
+        <title>GridSync — Alberta Grid Intelligence Platform</title>
+      </Head>
       <style>{`
         /* ── Aurora Borealis: horizontal ribbon curtains ── */
         @keyframes ar1 {

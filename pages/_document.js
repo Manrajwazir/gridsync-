@@ -14,7 +14,7 @@ export default function Document() {
         <meta name="description" content="AI-powered 48-hour demand forecasting and demand response coordination for Alberta's grid operators — AESO, utilities, and municipalities." />
         <meta property="og:title" content="GridSync — Alberta Grid Intelligence Platform" />
         <meta property="og:description" content="AI-powered 48-hour demand forecasting and demand response coordination for Alberta's grid operators." />
-        <title>GridSync — Alberta Grid Intelligence Platform</title>
+
       </Head>
       <body style={{ backgroundColor: "#000" }}>
         <Main />
