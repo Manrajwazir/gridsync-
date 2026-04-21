@@ -1,26 +1,23 @@
-const MAX_CAPACITY = 13000
-
 /*
  * /api/historical-usage — Returns last 24h of Alberta grid demand
  *
- * Strategy: Since AESO's Pool Price Report API is no longer accessible
- * with a free API key, we build historical data by polling the live
- * Current Supply Demand API ourselves.
+ * Strategy:
+ *   1. Fetch current live MW from AESO CSD API
+ *   2. Upsert it into Supabase `grid_readings` table (dedup by hour)
+ *   3. Query last 24 real readings from Supabase
+ *   4. Backfill any gaps with a synthetic curve anchored to live MW
  *
- * On each call, we fetch the current live value from AESO CSD,
- * append it to an in-memory ring buffer (24 slots, 1 per hour),
- * and return the buffer contents.
- *
- * First load will only have 1 point — the fallback fills gaps
- * with a realistic synthetic curve anchored to the live value.
+ * This means the historical line:
+ *   - Is 100% real AESO data once 24h of traffic has passed
+ *   - Survives Vercel cold starts, multiple instances, redeployments
+ *   - Degrades gracefully to a realistic synthetic curve on first load
  */
 
-// ── In-memory ring buffer: survives across requests in the same process ──
-// On Vercel serverless, this resets on cold starts (~every 5–15 min of inactivity).
-// That's fine — the fallback fills gaps smoothly.
-const historicalCache = []
-const MAX_POINTS = 25  // ~24h of hourly data + 1 buffer
+import { supabaseServer } from '../../lib/supabaseServer'
 
+const MAX_CAPACITY = 13000
+
+// ── Step 1: Get current live MW from AESO CSD ──
 async function fetchCurrentAIL(apiKey) {
   try {
     const response = await fetch(
@@ -42,97 +39,110 @@ async function fetchCurrentAIL(apiKey) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=120')
+  res.setHeader('Cache-Control', 's-maxage=55, stale-while-revalidate=120')
 
   const apiKey = process.env.AESO_API_KEY
   const anchor = parseFloat(req.query.anchor) || 11200
 
-  // 1. Try to fetch a fresh live data point
+  // ── 1. Fetch current live reading ──
   let liveMw = null
   if (apiKey) {
     liveMw = await fetchCurrentAIL(apiKey)
   }
 
-  // 2. Append to cache if we got a fresh reading (dedup by hour)
-  if (liveMw) {
+  // ── 2. Upsert into Supabase (dedup by hour bucket) ──
+  if (liveMw && supabaseServer) {
     const now = new Date()
-    const hourKey = now.toISOString().slice(0, 13) // "2026-04-20T19"
+    // Round down to nearest hour for the dedup key
+    const hourTimestamp = new Date(
+      now.getFullYear(), now.getMonth(), now.getDate(), now.getHours()
+    ).toISOString()
 
-    const lastEntry = historicalCache[historicalCache.length - 1]
-    if (!lastEntry || lastEntry.hourKey !== hourKey) {
-      historicalCache.push({
-        hourKey,
-        timestamp: now.toISOString(),
-        usage_mw: liveMw,
-      })
-      // Trim to max size
-      while (historicalCache.length > MAX_POINTS) {
-        historicalCache.shift()
-      }
+    const { error } = await supabaseServer
+      .from('grid_readings')
+      .upsert(
+        { hour_timestamp: hourTimestamp, usage_mw: liveMw },
+        { onConflict: 'hour_timestamp', ignoreDuplicates: false }
+      )
+
+    if (error) {
+      // Table might not exist yet — log but don't crash
+      console.warn('grid_readings upsert failed:', error.message)
     }
   }
 
-  // 3. Build response: real cached points + synthetic backfill for gaps
-  const realPoints = historicalCache.map(pt => ({
-    timestamp: pt.timestamp,
-    usage_mw: pt.usage_mw,
-  }))
+  // ── 3. Query last 24 real readings from Supabase ──
+  let realPoints = []
+  if (supabaseServer) {
+    const cutoff = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString()
 
+    const { data, error } = await supabaseServer
+      .from('grid_readings')
+      .select('hour_timestamp, usage_mw')
+      .gte('hour_timestamp', cutoff)
+      .order('hour_timestamp', { ascending: true })
+      .limit(25)
+
+    if (!error && data?.length) {
+      realPoints = data.map(row => ({
+        timestamp: row.hour_timestamp,
+        usage_mw: row.usage_mw,
+      }))
+    }
+  }
+
+  // ── 4. Build final 24-point response ──
   if (realPoints.length >= 6) {
-    // Enough real data — return it directly
+    // Enough real data — return it
     return res.status(200).json({
       data: realPoints,
       is_mock: false,
       count: realPoints.length,
-      cache_size: historicalCache.length,
     })
   }
 
-  // Not enough real data yet — fill the gap with synthetic curve
-  // anchored to the most recent real value (or the anchor param)
+  // Not enough real data yet — backfill gaps with synthetic curve
   const currentMw = liveMw || anchor
-  const synthetic = generateBackfill(currentMw, realPoints)
+  const result = generateBackfill(currentMw, realPoints)
 
   return res.status(200).json({
-    data: synthetic,
+    data: result,
     is_mock: realPoints.length === 0,
     real_points: realPoints.length,
-    cache_size: historicalCache.length,
   })
 }
 
-// Merges real cached points with synthetic backfill to produce 24 points
+// Generates a 24-point synthetic curve, substituting any real points we have
 function generateBackfill(anchorMw, realPoints) {
   const now = new Date()
   const result = []
 
-  // Generate 24 synthetic hourly points
   for (let i = 23; i >= 0; i--) {
     const time = new Date(now - i * 60 * 60 * 1000)
-    const hourKey = time.toISOString().slice(0, 13)
+    const hourKey = new Date(
+      time.getFullYear(), time.getMonth(), time.getDate(), time.getHours()
+    ).toISOString()
 
-    // Check if we have a real data point for this hour
-    const real = realPoints.find(
-      pt => pt.timestamp.slice(0, 13) === hourKey
-    )
-
+    // Use real data if we have it for this hour
+    const real = realPoints.find(pt => pt.timestamp.slice(0, 13) === hourKey.slice(0, 13))
     if (real) {
       result.push(real)
-    } else {
-      // Generate synthetic value based on time-of-day curve
-      const hour = time.getHours()
-      let baseMW = 9200
-      if (hour >= 6 && hour < 10) baseMW = 9200 + (hour - 6) * 350
-      if (hour >= 10 && hour < 16) baseMW = 11400 + Math.sin(hour) * 200
-      if (hour >= 16 && hour < 21) baseMW = 11400 + (hour - 16) * 250
-      if (hour >= 21) baseMW = 11800 - (hour - 21) * 400
-      if (hour < 6) baseMW = 9800 + hour * 80
-
-      result.push({
-        timestamp: time.toISOString(),
-        usage_mw: Math.round(baseMW * (anchorMw / 10500)),
-      })
+      continue
     }
+
+    // Synthetic value based on typical Alberta hourly load curve
+    const hour = time.getHours()
+    let baseMW = 9200
+    if (hour >= 6  && hour < 10) baseMW = 9200 + (hour - 6) * 350
+    if (hour >= 10 && hour < 16) baseMW = 11400 + Math.sin(hour) * 200
+    if (hour >= 16 && hour < 21) baseMW = 11400 + (hour - 16) * 250
+    if (hour >= 21)              baseMW = 11800 - (hour - 21) * 400
+    if (hour < 6)                baseMW = 9800  + hour * 80
+
+    result.push({
+      timestamp: time.toISOString(),
+      usage_mw: Math.round(baseMW * (anchorMw / 10500)),
+    })
   }
 
   return result
